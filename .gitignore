@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment (.env.example SÍ se versiona, es la plantilla)
+.env
+
+# Datos de pacientes: nunca se versionan
+bandeja/
+data/
+logs/
+debug/
+*.pdf
+
+# Estado local de herramientas
+.claude/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
