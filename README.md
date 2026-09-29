@@ -104,6 +104,8 @@ Para producción, programar `python main.py` en el **Programador de tareas de Wi
 └── tests/                # python -m unittest discover tests
 ```
 
+Diseño, decisiones y manejo de errores: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
+
 Salidas (no se versionan, tienen datos de pacientes): `data/registro.json`, `data/reporte_*.txt`, `logs/`, `debug/`.
 
 ## Pendientes por confirmar (semana 1)
