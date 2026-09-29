@@ -18,6 +18,19 @@ Nombre de pila: Ana Edad: 78.4 Peso: 64 kg Hora: 11:02 a. m.
 Apellido: Perez Gomez Género: Mujer IMC: 27.7 Técnico: Xxxx
 """
 
+# Forma real del texto (extract_text con use_text_flow) en los informes del
+# consultorio 22, validada con 33 PDF el 2026-09-28. Datos ficticios.
+INFORME_REAL = """CEMDE
+Detalles del paciente
+ID: 12345678
+Apellido: Perez Gomez
+Nombre de pila: Ana Maria
+Fecha de nac.: 05 jun. 1950
+Detalles de la sesión
+Fecha de la sesión: 22 sep., 2026
+Hora de inicio: 11:02 AM
+"""
+
 
 class TestParseFecha(unittest.TestCase):
     def test_formatos(self):
@@ -26,6 +39,8 @@ class TestParseFecha(unittest.TestCase):
             "22-09-2026": date(2026, 9, 22),
             "2026-09-22": date(2026, 9, 22),
             "22 sep. 2026": date(2026, 9, 22),
+            "22 sep., 2026": date(2026, 9, 22),
+            "22 ago., 2026; 9:15 AM": date(2026, 8, 22),
             "22 sept 2026": date(2026, 9, 22),
             "22 de septiembre de 2026": date(2026, 9, 22),
             "lu 22 sep. 2026": date(2026, 9, 22),
@@ -55,6 +70,10 @@ class TestExtraccion(unittest.TestCase):
 
     def test_fecha_ignora_nacimiento_en_linea_mezclada(self):
         self.assertEqual(extraer_fecha(INFORME, HOY), date(2026, 9, 22))
+
+    def test_informe_real(self):
+        self.assertEqual(extraer_cedula(INFORME_REAL), "12345678")
+        self.assertEqual(extraer_fecha(INFORME_REAL, HOY), date(2026, 9, 22))
 
     def test_fecha_prefiere_etiqueta_de_sesion(self):
         texto = "Fecha impresión: 23/09/2026\nFecha de la sesión: 21/09/2026"

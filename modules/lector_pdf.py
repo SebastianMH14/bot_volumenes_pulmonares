@@ -2,12 +2,13 @@
 Lectura de los informes PDF de volúmenes pulmonares.
 
 El nombre del archivo que genera el equipo NO trae la cédula
-(ej. "Gloria ines herrera gaviria_LVM_22092026_110217.pdf"), así que la
+(ej. "Nombre apellido_LVM_22092026_110217.pdf"), así que la
 identificación del paciente se extrae del contenido del PDF
-("Detalles del paciente → ID: 32426523"). La fecha del examen se toma de la
-etiqueta de la sesión y, si no se encuentra, del nombre del archivo.
+("Detalles del paciente → ID: 12345678"). La fecha del examen se toma de la
+etiqueta de la sesión ("Fecha de la sesión: 22 sep., 2026") y, si no se
+encuentra, del nombre del archivo.
 
-PENDIENTE: validar los patrones con informes reales del consultorio 22.
+Validado el 2026-09-28 con 33 informes reales del consultorio 22.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ _DIA_SEMANA = r"(?:(?:lu|ma|mi|ju|vi|sa|do)[a-záéíóú]*\.?\s+)?"
 _RE_NUMERICA = re.compile(r"^\s*" + _DIA_SEMANA + r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\b", re.I)
 _RE_ISO = re.compile(r"^\s*" + _DIA_SEMANA + r"(\d{4})-(\d{1,2})-(\d{1,2})\b", re.I)
 _RE_TEXTO = re.compile(
-    r"^\s*" + _DIA_SEMANA + r"(\d{1,2})\s+(?:de\s+)?([a-záéíóú]{3,10})\.?\s+(?:de\s+)?(\d{4})\b", re.I
+    r"^\s*" + _DIA_SEMANA + r"(\d{1,2})\s+(?:de\s+)?([a-záéíóú]{3,10})\.?,?\s+(?:de\s+)?(\d{4})\b", re.I
 )
 
 _RE_CEDULA = re.compile(
@@ -150,8 +151,12 @@ def extraer_texto(pdf_path: str | Path) -> str:
     import pdfplumber  # import diferido: los tests de parseo no lo necesitan
 
     with pdfplumber.open(str(pdf_path)) as pdf:
-        # Los datos del paciente están en la primera página
-        return "\n".join((p.extract_text() or "") for p in pdf.pages[:2])
+        # Los datos del paciente están en la primera página.
+        # use_text_flow: en el informe el valor de la fecha se dibuja encima de
+        # la etiqueta "Fecha de la sesión:" y, ordenando por posición, pdfplumber
+        # intercala los caracteres ("Fecha de la2 s2e..."). En el orden del
+        # PDF la línea sale limpia.
+        return "\n".join((p.extract_text(use_text_flow=True) or "") for p in pdf.pages[:2])
 
 
 def leer_informe(pdf_path: str | Path, hoy: date | None = None) -> DatosInforme:

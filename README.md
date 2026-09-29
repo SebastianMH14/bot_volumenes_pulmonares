@@ -86,7 +86,7 @@ python main.py --sin-correo
 python explorar_sunu.py <cedula_de_un_paciente_con_volumenes>
 ```
 
-Para producción, programar `python main.py` en el **Programador de tareas de Windows** del equipo del consultorio, después del horario de atención. La sesión de Windows debe quedar desbloqueada, porque Chrome corre visible.
+Para producción, programar `run_bot.bat` en el **Programador de tareas de Windows** del equipo del consultorio, después del horario de atención (usa el `venv`, fuerza UTF-8 y agrega la salida a `logs\tarea_programada.log`; acepta los mismos argumentos que `main.py`). La sesión de Windows debe quedar desbloqueada, porque Chrome corre visible.
 
 ## Estructura
 
@@ -113,11 +113,11 @@ Salidas (no se versionan, tienen datos de pacientes): `data/registro.json`, `dat
 Salen del kickoff con CEMDE del 23/09/2026:
 
 - [ ] **Acceso remoto** al equipo del consultorio 22 (Diana).
-- [ ] **Carpeta estándar** acordada con la terapeuta. Definir la ruta y ponerla en `CARPETA_ENTRADA` (Carlos).
+- [x] **Carpeta estándar**: `Desktop\VOLUMENES ALEJA`. La terapeuta debe guardar los PDF nuevos en la raíz, no en subcarpetas.
 - [ ] **Selectores de Sunu**: correr `explorar_sunu.py` con un paciente real y ajustar `SEL_TAB_VOLUMENES` / `SEL_CONTENEDOR_VOLUMENES`.
 - [ ] **¿La fila de volúmenes se crea sola** al atender al paciente, o hay que usar *Crear Volúmenes Pulmonares*? El bot asume que ya existe.
 - [ ] **Modal de adjuntos**: confirmar que usa las mismas clases que espirometría (`btnVerAdjuntosFormato`, `inputAdjuntoFormatoPdf`, `btnSubirAdjuntoFormato`).
-- [ ] **Informes reales**: validar `lector_pdf.py` con 3 a 5 PDF reales (`python main.py --solo-leer`) y agregar sus textos como casos de prueba.
+- [x] **Informes reales**: `lector_pdf.py` validado con 33 PDF reales (2026-09-28); su formato quedó como caso de prueba (`INFORME_REAL`, datos ficticios).
 
 ## Tests
 
