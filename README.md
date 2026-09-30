@@ -114,9 +114,10 @@ Salen del kickoff con CEMDE del 23/09/2026:
 
 - [ ] **Acceso remoto** al equipo del consultorio 22 (Diana).
 - [x] **Carpeta estándar**: `Desktop\VOLUMENES ALEJA`. La terapeuta debe guardar los PDF nuevos en la raíz, no en subcarpetas.
-- [ ] **Selectores de Sunu**: correr `explorar_sunu.py` con un paciente real y ajustar `SEL_TAB_VOLUMENES` / `SEL_CONTENEDOR_VOLUMENES`.
-- [ ] **¿La fila de volúmenes se crea sola** al atender al paciente, o hay que usar *Crear Volúmenes Pulmonares*? El bot asume que ya existe.
-- [ ] **Modal de adjuntos**: confirmar que usa las mismas clases que espirometría (`btnVerAdjuntosFormato`, `inputAdjuntoFormatoPdf`, `btnSubirAdjuntoFormato`).
+- [x] **Selectores de Sunu**: confirmados con `explorar_sunu.py` el 2026-09-30 (`#tab-volumen-pulmonar`).
+- [ ] **¿La fila de volúmenes se crea sola** al atender al paciente? No siempre: en la primera tanda 1 de 8 pacientes no tenía registro. Definir con CEMDE quién lo crea (*Crear Volúmenes Pulmonares*); mientras tanto ese informe queda pendiente y luego pasa a `errores/`.
+- [x] **Modal de adjuntos**: usa las mismas clases que espirometría (`btnVerAdjuntosFormato`, `inputAdjuntoFormatoPdf`, `btnSubirAdjuntoFormato`). La carga es por partes; el bot espera a que Sunu reemplace el modal.
+- [x] **Primera subida real** (2026-09-30): 7 informes subidos y verificados en Sunu; el octavo quedó pendiente por no tener registro de volúmenes.
 - [x] **Informes reales**: `lector_pdf.py` validado con 33 PDF reales (2026-09-28); su formato quedó como caso de prueba (`INFORME_REAL`, datos ficticios).
 
 ## Tests

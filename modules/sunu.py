@@ -17,7 +17,14 @@ import time
 from datetime import date, datetime
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import (
+    NoSuchElementException, StaleElementReferenceException, TimeoutException,
+)
+
+SEL_EVIDENCIA_ADJUNTO = (
+    "#modalAdjuntosFormato iframe.visorPdfAdjuntoFormato, "
+    "#modalAdjuntosFormato .adjuntos-formato-proceso table tbody tr"
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -152,29 +159,38 @@ def buscar_fila_por_fecha(driver: WebDriver, wait: WebDriverWait, fecha: date) -
 # ── Modal de adjuntos ───────────────────────────────────────
 
 def _ya_cargado(driver: WebDriver) -> bool:
-    """Con un adjunto previo, el modal muestra el visor en vez del input de subida."""
-    if driver.find_elements(By.CSS_SELECTOR, "div.adjuntos-formato-proceso, iframe.visorPdfAdjuntoFormato"):
-        return True
-    try:
-        texto = (driver.find_element(By.CSS_SELECTOR, "div.modal-body").text or "").lower()
-        if any(i in texto for i in ("ya cargado", "archivo cargado", "adjunto cargado", "cargado anteriormente")):
-            return True
-    except NoSuchElementException:
-        pass
-    return False
+    """Con un adjunto previo, el modal lista el archivo y muestra el visor en vez del input de subida.
+
+    Se exige esa evidencia: `div.adjuntos-formato-proceso` envuelve todo el
+    modal y está también cuando no hay ningún archivo.
+    """
+    return bool(driver.find_elements(By.CSS_SELECTOR, SEL_EVIDENCIA_ADJUNTO))
 
 
-def _esperar_confirmacion(driver: WebDriver, timeout: int = 30) -> bool:
+def _esperar_confirmacion(driver: WebDriver, file_input: WebElement, timeout: int = 180) -> bool:
+    """Espera a que Sunu termine de recibir el PDF.
+
+    Sunu lo sube en partes ("Subiendo parte 1 de 3...") y solo al completar
+    reemplaza el contenido del modal, con lo que el input original deja de
+    existir. Eso es la confirmación: un texto de estado no basta, porque
+    cerrar el modal o navegar mientras dice "Subiendo parte..." corta la carga.
+    Un fallo se muestra como alerta roja o como aviso de sesión.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        estados = driver.find_elements(By.CSS_SELECTOR, ".estadoSubidaAdjuntoFormato")
-        if estados:
-            texto = (estados[0].text or "").lower()
-            if texto and "error" not in texto:
-                return True
-        if not driver.find_elements(By.CSS_SELECTOR, "div.modal.in, div.modal.fade.in, div.modal.show"):
+        try:
+            file_input.is_enabled()
+        except StaleElementReferenceException:
             return True
+        fallo = driver.find_elements(By.CSS_SELECTOR, ".estadoSubidaAdjuntoFormato.alert-danger")
+        if fallo:
+            logger.warning("Sunu rechazó la carga: %s", (fallo[0].text or "").strip())
+            return False
+        if driver.find_elements(By.CSS_SELECTOR, ".estadoSesionAdjuntoFormato:not(.hidden)"):
+            logger.warning("Sunu pidió renovar la sesión durante la carga")
+            return False
         time.sleep(0.5)
+    logger.warning("La carga no terminó en %d s", timeout)
     return False
 
 
@@ -226,7 +242,7 @@ def subir_pdf(driver: WebDriver, wait: WebDriverWait, fila: WebElement, pdf_path
         return "boton_cargar_no_encontrado"
     btn[0].click()
 
-    if not _esperar_confirmacion(driver):
+    if not _esperar_confirmacion(driver, file_input):
         diagnostico(driver, "subida_sin_confirmacion")
         cerrar_modal(driver)
         return "sin_confirmacion"

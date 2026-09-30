@@ -35,7 +35,9 @@ Windows, Python 3.10+. `pdfplumber` se importa de forma diferida en `lector_pdf.
 
 ## Estado actual (pendientes de validar en campo)
 
-- `SEL_TAB_VOLUMENES` / `SEL_CONTENEDOR_VOLUMENES` son suposiciones (`#tab-volumenes-pulmonares`); confirmar con `explorar_sunu.py`.
-- Se asume que la fila de volúmenes ya existe en Sunu cuando se atiende al paciente, y que el modal de adjuntos usa las mismas clases que espirometría.
+- Selectores confirmados en Sunu el 2026-09-30: pestaña `#tab-volumen-pulmonar` (tabla Fecha | Acciones | Adjuntos, fecha `DD/MM/AAAA`) y modal `#modalAdjuntosFormato` con las mismas clases que espirometría.
+- La fila de volúmenes **no siempre existe**: en la primera tanda 1 de 8 pacientes no tenía registro ("No hay datos disponibles"). Queda como `FILA_NO_ENCONTRADA` hasta que alguien lo cree en Sunu; el bot no crea registros.
+- Sunu sube el PDF en partes ("Subiendo parte 1 de 3...") y solo al terminar reemplaza el contenido del modal. `_esperar_confirmacion` espera ese reemplazo (el input queda stale); no volver a aceptar el texto de estado como confirmación, porque navegar antes corta la carga. Validado el 2026-09-30: 7 informes subidos y verificados uno por uno en Sunu.
+- Con un adjunto, el modal lista el archivo (estado "Pendiente"), muestra `iframe.visorPdfAdjuntoFormato` y el formulario de lectura/firma (`formFirmarAdjuntoFormato`, que el bot nunca toca), sin input de subida. `_ya_cargado` exige esa evidencia: `div.adjuntos-formato-proceso` envuelve todo el modal y está siempre.
 - `lector_pdf.py` validado el 2026-09-28 con 33 informes reales: cédula y fecha desde el contenido en 33/33. El informe dibuja el valor de la fecha encima de la etiqueta, por eso `extraer_texto` usa `use_text_flow=True`; no quitarlo.
 - Producción: `C:\Users\user\bot_volumenes_pulmonares` en el equipo EC-300, tarea "Bot Volumenes Pulmonares" diaria 22:00 vía `run_bot.bat`. `CARPETA_ENTRADA` = `Desktop\VOLUMENES ALEJA`; el bot solo lee la raíz, las subcarpetas por fecha de la terapeuta son histórico.

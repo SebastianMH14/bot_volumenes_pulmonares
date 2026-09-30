@@ -44,7 +44,7 @@ EMAIL_SMTP_HOST = os.getenv("EMAIL_SMTP_HOST", "smtp.gmail.com")
 EMAIL_SMTP_PORT = int(os.getenv("EMAIL_SMTP_PORT", "587"))
 
 # ── Selectores de Sunu (perfil del paciente → Volúmenes Pulmonares) ──
-# PENDIENTE: confirmar con `python explorar_sunu.py <cedula>`. Los valores por
-# defecto siguen el patrón de la pestaña de espirometría (#tab-espirometria).
-SEL_TAB_VOLUMENES = os.getenv("SEL_TAB_VOLUMENES") or "a.link-tab[href='#tab-volumenes-pulmonares']"
-SEL_CONTENEDOR_VOLUMENES = os.getenv("SEL_CONTENEDOR_VOLUMENES") or "#tab-volumenes-pulmonares"
+# Confirmados con `python explorar_sunu.py <cedula>` el 2026-09-30. Si Sunu
+# cambia la pestaña, se ajustan en el .env sin tocar el código.
+SEL_TAB_VOLUMENES = os.getenv("SEL_TAB_VOLUMENES") or "a.link-tab[href='#tab-volumen-pulmonar']"
+SEL_CONTENEDOR_VOLUMENES = os.getenv("SEL_CONTENEDOR_VOLUMENES") or "#tab-volumen-pulmonar"

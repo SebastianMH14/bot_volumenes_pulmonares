@@ -11,15 +11,22 @@ No sube ni modifica nada en Sunu.
 """
 
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 import config
 from modules import sunu
 from modules.logger import setup_logger
+
+
+def _sin_tildes(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
 
 
 def main() -> None:
@@ -40,9 +47,10 @@ def main() -> None:
             texto = (a.get_attribute("textContent") or "").strip()
             logger.info("  %-35s → %s", texto[:35], a.get_attribute("href").split("#", 1)[-1])
 
+        # En Sunu la pestaña se llama "Volúmenes Pulmonares": comparar sin tildes
         candidatos = [
             a for a in driver.find_elements(By.CSS_SELECTOR, "a[href^='#tab-']")
-            if "volumen" in (a.get_attribute("textContent") or "").lower()
+            if "volumen" in _sin_tildes(a.get_attribute("textContent") or "").lower()
         ]
         if not candidatos:
             logger.warning("No se encontró una pestaña cuyo texto contenga 'volumen'")
@@ -53,6 +61,12 @@ def main() -> None:
         destino = tab.get_attribute("href").split("#", 1)[-1]
         logger.info("Pestaña de volúmenes: a[href='#%s'] (clases: %s)", destino, tab.get_attribute("class"))
         driver.execute_script("arguments[0].click();", tab)
+
+        # La tabla puede cargar después del clic; se espera igual que en el bot
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"#{destino} table tbody")))
+        except TimeoutException:
+            logger.warning("La pestaña no mostró ninguna tabla en 15 s")
 
         cont = driver.find_element(By.ID, destino)
         out = Path(config.DEBUG_DIR) / f"{datetime.now():%Y%m%d_%H%M%S}_tab_volumenes.html"
