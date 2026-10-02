@@ -4,7 +4,7 @@
 |---|---|
 | **Proyecto** | Ampliación del Bot RPA de Espirometrías, CEMDE (Fase 2, cotización CEMDE-2026-01) |
 | **Alcance** | Carga automática de informes de volúmenes pulmonares por pletismografía, sede Laureles, consultorio 22 |
-| **Estado** | Estructura inicial. Selectores de Sunu y lector de PDF pendientes de validar en campo (ver §11) |
+| **Estado** | En producción desde el 2026-09-30 en el equipo del consultorio 22. Lector, selectores y carga validados en campo; pendientes en §11 |
 | **Autor** | Sebastián Molina Henao |
 
 ---
@@ -57,6 +57,7 @@ flowchart TB
 | `modules/reporte.py` | Arma el cuerpo del reporte, lo guarda en `data/` y lo envía por SMTP con reintentos (si falla, deja copia local) | `config` |
 | `modules/circuit_breaker.py` | Corta el lote ante N fallos consecutivos con la misma causa | — |
 | `explorar_sunu.py` | Herramienta de solo lectura: vuelca pestañas y HTML del perfil para confirmar selectores | `sunu` |
+| `run_bot.bat` | Lanzador de la tarea programada: usa el `venv`, fuerza UTF-8 y agrega la salida a `logs\tarea_programada.log` | `venv` |
 
 `sunu.py`, `circuit_breaker.py`, `logger.py` y la lógica de correo vienen de `bot_espirometrias`, que ya está probado en producción (ver §9).
 
@@ -72,7 +73,7 @@ sequenceDiagram
     participant S as Sunu (Selenium)
     participant R as reporte
 
-    TS->>M: python main.py
+    TS->>M: run_bot.bat → main.py
     M->>B: listar_pdfs(CARPETA_ENTRADA)
     loop cada PDF
         M->>B: hash_archivo → ¿ya_finalizado?
@@ -93,6 +94,7 @@ sequenceDiagram
         M->>S: abrir_pestania_volumenes
         M->>S: buscar_fila_por_fecha(fecha)
         M->>S: subir_pdf(fila, pdf)
+        Note over M,S: espera a que Sunu termine la carga por partes (§6)
         alt ok / ya_cargado
             M->>B: registrar + mover a procesados/
         else falla
@@ -125,10 +127,11 @@ Un informe **pendiente** se queda en la raíz de la carpeta de entrada, así que
 ## 5. Datos y persistencia
 
 ```
-CARPETA_ENTRADA/                 (ej. C:\Volumenes, en el equipo del consultorio)
+CARPETA_ENTRADA/                 (Desktop\VOLUMENES ALEJA, en el equipo del consultorio)
 ├── *.pdf                        pendientes de procesar
-├── procesados/AAAA-MM-DD/       subidos o ya cargados
-└── errores/AAAA-MM-DD/          para revisión manual
+├── procesados/AAAA-MM-DD/       subidos o ya cargados (fecha de la corrida, no del examen)
+├── errores/AAAA-MM-DD/          para revisión manual
+└── <subcarpetas de la terapeuta> histórico anterior al bot; no se leen
 
 <proyecto>/
 ├── data/registro.json           estado por hash (ver abajo)
@@ -163,8 +166,9 @@ CARPETA_ENTRADA/                 (ej. C:\Volumenes, en el equipo del consultorio
 |---|---|---|---|
 | `PDF_ILEGIBLE`, `SIN_CEDULA`, `SIN_FECHA` | lectura | Pasa directo a `errores/` | — |
 | `PACIENTE_NO_ENCONTRADO` | Sunu | Pendiente | Sí |
-| `FILA_NO_ENCONTRADA` (la fila de la fecha aún no existe) | Sunu | Pendiente | Sí |
-| `MODAL_NO_ABRIO`, `BOTON_*`, `SIN_CONFIRMACION` | Sunu | Pendiente + captura en `debug/` | Sí |
+| `FILA_NO_ENCONTRADA` (no hay fila con la fecha del examen: no existe o se creó con otra fecha) | Sunu | Pendiente | Sí |
+| `MODAL_NO_ABRIO`, `BOTON_*` | Sunu | Pendiente + captura en `debug/` | Sí |
+| `SIN_CONFIRMACION` (Sunu mostró la alerta roja de fallo, pidió renovar la sesión o no terminó en 180 s) | Sunu | Pendiente + captura en `debug/` | Sí |
 | `TIMEOUT`, `ERROR_INESPERADO` | Sunu | Pendiente + captura | Sí |
 | Falla el login o el navegador no arranca | Sunu | Se aborta la carga y el correo sale con **[ALERTA]** | **No** |
 | El navegador deja de responder a mitad del lote | Sunu | Hasta 2 reinicios; después se aborta con alerta | No (los restantes no se tocan) |
@@ -173,6 +177,10 @@ CARPETA_ENTRADA/                 (ej. C:\Volumenes, en el equipo del consultorio
 | Falla el SMTP | reporte | 3 reintentos; si no sale, copia en `data/EMAIL_NO_ENVIADO_*` | — |
 
 Lo que guía estas reglas: **un problema del sistema (Sunu caído, UI cambiada, red) nunca debe mandar informes buenos a `errores/`**. Por eso el login no cuenta como intento y el circuit breaker corta antes de agotar el lote.
+
+**Confirmación de la carga.** Sunu sube el PDF en partes de 512 KiB (un informe de volúmenes pesa ~1,3 MB, o sea 3 partes) y muestra "Subiendo parte N de M...". Solo al recibir la última reemplaza el contenido del modal por la vista del adjunto: el archivo listado con estado "Pendiente", el visor (`iframe.visorPdfAdjuntoFormato`) y el formulario de lectura/firma del profesional. El bot da la carga por buena únicamente cuando ese reemplazo ocurre (el input de subida queda *stale*). Aceptar el texto de estado como éxito hacía que el bot cerrara el modal y navegara al siguiente paciente con la carga a medias, y marcara el informe como subido.
+
+**"Ya cargado".** Si al abrir el modal no aparece el input de subida, el informe cuenta como ya cargado solo si el modal lista un archivo o muestra el visor. El contenedor `div.adjuntos-formato-proceso` no sirve como evidencia: está siempre, también sin archivos.
 
 ## 7. Decisiones de diseño
 
@@ -186,19 +194,23 @@ Lo que guía estas reglas: **un problema del sistema (Sunu caído, UI cambiada, 
 | D6 | **Selectores de la pestaña de volúmenes configurables en `.env`** | Sunu ya rediseñó `/pacientes` el 2026-08-31. Ajustar un selector no debe exigir un despliegue de código | Selectores fijos en el código |
 | D7 | **El fallo de sesión no cuenta intento** | Evita que una caída de Sunu mande todos los informes a `errores/` después de `MAX_INTENTOS` corridas | Contar intento en cualquier falla |
 | D8 | **`pdfplumber` con import diferido** | Los tests de parseo corren sin la dependencia, y un problema al instalarla no rompe la lectura de configuración | Import a nivel de módulo |
+| D9 | **Texto con `use_text_flow`** | El informe dibuja la fecha encima de la etiqueta "Fecha de la sesión:"; ordenando por posición, pdfplumber intercala los caracteres y la fecha nunca se leía del contenido | Depender de la fecha del nombre del archivo (falla si se renombra) |
+| D10 | **Confirmación = Sunu reemplaza el modal** (§6) | Es lo único que Sunu hace al terminar todas las partes | Texto de estado o spinner (se ven antes de terminar) |
+| D11 | **La fila se busca solo por la fecha exacta del examen** | La fecha de la fila es la de creación del registro. Si se creó otro día no hay forma segura de saber cuál es, y menos con varias filas; se deja para adjuntar a mano | Tomar la única fila o la más cercana (puede ser otro examen) |
+| D12 | **La tarea no se recupera si se perdió** (`StartWhenAvailable` desactivado) | Tras un arranque se ejecutarían a la vez las dos tareas atrasadas y chocarían en el equipo. Un día perdido solo retrasa los informes al siguiente | Recuperar la corrida al encender |
 
 ## 8. Despliegue y operación
 
-- **Dónde corre:** el equipo del consultorio 22 (Windows), el mismo donde la terapeuta guarda los PDF.
-- **Cómo se programa:** Programador de tareas de Windows, `python main.py` una vez al día después del horario de atención, con la sesión de Windows **desbloqueada** (Chrome corre visible).
-- **Convivencia con `bot_espirometrias`:** en la Fase 1 ese bot también se instala en este equipo. Usa automatización de escritorio sobre MirSpiro (foco de ventana y teclado), así que **los dos bots no deben correr al mismo tiempo**. Hay que programarlos en horarios separados, por ejemplo espirometrías primero y volúmenes 1 hora después.
+- **Dónde corre:** el equipo del consultorio 22 (EC-300, Windows), el mismo donde la terapeuta guarda los PDF. Instalado en `C:\Users\user\bot_volumenes_pulmonares`.
+- **Cómo se programa:** tarea "Bot Volumenes Pulmonares" del Programador de tareas, diaria a las 22:00, que ejecuta `run_bot.bat`. Corre con la sesión de Windows iniciada y **desbloqueada** (Chrome corre visible) y no recupera corridas perdidas (D12).
+- **Convivencia con `bot_espirometrias`:** está instalado en el mismo equipo, con su tarea a las 21:00 (tarda de 3 a 30 minutos). Maneja MIR Spiro con foco de ventana y teclado, así que **los dos bots no deben correr al mismo tiempo**; por eso volúmenes va una hora después.
 - **Instalación:** `venv`, `pip install -r requirements.txt`, `.env` a partir de `.env.example`, con `CARPETA_ENTRADA` apuntando a la carpeta acordada.
-- **Puesta en marcha:**
-  1. `python explorar_sunu.py <cédula>` para confirmar los selectores.
-  2. `python main.py --solo-leer` con PDF reales para validar el lector.
-  3. `python main.py --sin-correo` con 1 o 2 informes.
-  4. Programar la tarea.
-- **Monitoreo:** el correo diario. Si llega un asunto con `[ALERTA]` o hay informes en `errores/`, requiere revisión el mismo día.
+- **Puesta en marcha (hecha):**
+  1. 2026-09-28: `--solo-leer` con 33 informes reales; se corrigió el lector (D9).
+  2. 2026-09-30: `explorar_sunu.py`; se corrigió el selector de la pestaña (`#tab-volumen-pulmonar`).
+  3. 2026-09-30: primera corrida real con `--sin-correo`: 7 informes subidos y verificados uno por uno en Sunu, 1 pendiente por no tener registro. Se corrigió la confirmación de carga (D10).
+  4. Tarea programada activa desde el 2026-09-28; primer correo automático el 2026-09-30.
+- **Monitoreo:** el correo diario a tres direcciones de CEMDE. Si llega un asunto con `[ALERTA]` o hay informes en `errores/`, requiere revisión el mismo día. Un correo sin informes varios días seguidos puede indicar que la terapeuta guarda los PDF en otro lugar.
 
 ## 9. Relación con `bot_espirometrias`
 
@@ -206,16 +218,19 @@ Lo que guía estas reglas: **un problema del sistema (Sunu caído, UI cambiada, 
 |---|---|---|
 | Login y `init_browser` | `modules/nube.py` | Sin preferencias de descarga (acá no se descargan Excel) |
 | `abrir_paciente` (búsqueda global) | `modules/subir_sunu.py` | Ninguno |
-| Modal de adjuntos (`_ya_cargado`, confirmación, cierre) | `modules/subir_sunu.py` | Simplificado; el botón se busca dentro de la fila (D5) |
+| Modal de adjuntos (`_ya_cargado`, confirmación, cierre) | `modules/subir_sunu.py` | El botón se busca dentro de la fila (D5); la confirmación espera a que Sunu reemplace el modal (D10) y `_ya_cargado` exige un archivo listado o el visor |
 | `CircuitBreaker`, logger | `modules/` | Nombre del logger `bot_volumenes` |
 | Reporte por correo | `main.py` | Asunto etiquetado por consultorio y secciones de volúmenes |
 
 Si Sunu cambia la búsqueda global o el modal de adjuntos, el ajuste probablemente haya que hacerlo **en ambos repositorios**.
 
+**Riesgo conocido en `bot_espirometrias`** (no se corrige desde este repo): su `_esperar_confirmacion_subida` sigue aceptando el texto de estado o el spinner oculto como éxito, y el mensaje de fallo de Sunu ("No fue posible cargar el PDF.") no contiene "error", así que también pasa. Sus PDF (~125 KB) caben en una sola parte, lo que reduce el riesgo pero no lo elimina. Conviene portar allá la confirmación de D10.
+
 ## 10. Seguridad y privacidad
 
 - **Tipo de datos:** son datos de salud, es decir, **datos sensibles** según la Ley 1581 de 2012. Los tratan el PDF, el nombre del archivo (trae el nombre del paciente), `data/registro.json`, los logs y las capturas de `debug/`.
 - **Qué nunca se versiona:** `bandeja/`, `data/`, `logs/`, `debug/`, `*.pdf` y `.env` están en `.gitignore`. Los tests usan datos ficticios.
+- **Qué no se muestra:** al revisar logs, reportes o capturas se resume con conteos o se enmascara. El título del modal de adjuntos de Sunu trae la cédula y el nombre del paciente.
 - **Retención:** las capturas de `debug/` se purgan automáticamente (`DEBUG_RETENTION_DAYS`, 14 días por defecto). `procesados/` y `logs/` crecen sin límite. Hay que acordar con CEMDE cuánto tiempo guardarlos (ver §11).
 - **Credenciales:** van solo en `.env`, en el equipo del consultorio. El correo usa contraseña de aplicación, no la contraseña real de la cuenta.
 
@@ -223,10 +238,11 @@ Si Sunu cambia la búsqueda global o el modal de adjuntos, el ajuste probablemen
 
 | Riesgo o pendiente | Mitigación / acción |
 |---|---|
-| Los selectores de la pestaña de volúmenes son una suposición (`#tab-volumenes-pulmonares`) | Confirmar con `explorar_sunu.py` en la semana 1 y ajustar el `.env` |
-| La fila de volúmenes podría no crearse sola al atender al paciente | Confirmar con CEMDE. Si hay que crearla, es un cambio de alcance |
-| Los patrones del lector salen de un solo informe visto en video | Validar con 3 a 5 PDF reales y agregarlos (anonimizados) como tests |
-| Un adjunto **rechazado** en Sunu podría detectarse como "ya cargado" y no volver a subirse | Revisar cómo muestra el modal un rechazo y distinguirlo en `_ya_cargado` |
+| ~~Selectores de la pestaña de volúmenes supuestos~~ | **Resuelto 2026-09-30:** confirmados con `explorar_sunu.py` (`#tab-volumen-pulmonar`) |
+| ~~Patrones del lector sacados de un solo informe~~ | **Resuelto 2026-09-28:** validado con 33 PDF reales; el formato quedó como test anonimizado |
+| ~~La carga podía cortarse y marcarse como subida~~ | **Resuelto 2026-09-30:** confirmación por reemplazo del modal (D10), validada con 7 informes |
+| La fila de volúmenes **no siempre existe** (1 de 8 en la primera tanda) o se crea **con otra fecha** (el 2026-10-01 se crearon dos filas del 01/10 para un examen del 29/09) | El informe queda pendiente y luego va a `errores/` para adjuntarlo a mano (D11). Acordar con CEMDE quién crea el registro y con qué fecha. Crearlo desde el bot es un cambio de alcance |
+| Un adjunto **rechazado** ("Marcar como rechazado (examen para repetir)") | Ver cómo queda el modal: si reaparece el input de subida, un PDF nuevo se sube normal; si no, `_ya_cargado` lo daría por cargado. Revisar con el primer caso real |
 | PDF escaneado sin capa de texto | Termina en `errores/` como `PDF_ILEGIBLE`. Si pasa seguido, evaluar OCR |
-| La terapeuta guarda el PDF en otra carpeta | La guía de uso y el reporte diario lo hacen visible (menos informes de los esperados) |
+| La terapeuta guarda el PDF en otra carpeta | La guía de uso y el reporte diario lo hacen visible (menos informes de los esperados). El 30/09 y el 01/10 no llegó ningún PDF nuevo; confirmar con la terapeuta |
 | Retención de `procesados/` y `logs/` sin política | Acordar un plazo con CEMDE y agregar la purga |
